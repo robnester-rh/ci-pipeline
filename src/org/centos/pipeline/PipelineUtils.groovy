@@ -500,7 +500,7 @@ def setDefaultEnvVars(Map envMap=null){
  * @param stage - Current stage
  * @return
  */
-def setStageEnvVars(String stage){
+def setStageEnvVars(String stage, Boolean returnEnvList=false){
     def stages =
             ["ci-pipeline-rpmbuild"                : [
                     task                     : "./ci-pipeline/tasks/rpmbuild-test",
@@ -540,10 +540,15 @@ def setStageEnvVars(String stage){
              ]
             ]
 
-    // Get the map of env var keys and values and write them to the env global variable
-    stages.get(stage).each { key, value ->
-        env."${key}" = value
+    if (returnEnvList){
+        return stages.get(stage).collect{key, value -> "${key}=${value}"}
+    } else {
+        // Get the map of env var keys and values and write them to the env global variable
+        stages.get(stage).each { key, value ->
+            env."${key}" = value
+        }
     }
+
 }
 
 /**

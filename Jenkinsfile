@@ -324,109 +324,118 @@ podTemplate(name: podName,
                         }
                     }
 
-                    currentStage = "ci-pipeline-ostree-image-boot-sanity"
-                    stage(currentStage) {
-                        if (fileExists("${env.WORKSPACE}/NeedNewImage.txt") || ("${env.GENERATE_IMAGE}" == "true")) {
-                            pipelineUtils.setStageEnvVars(currentStage)
+                    // Run the following stages in parallel
 
-                            // Set our message topic, properties, and content
-                            messageFields = pipelineUtils.setMessageFields("image.test.smoke.running")
+                    // Send queued messages
+                    for (msgType in ["package.test.functional.queued", "compose.test.integration.queued"]){
+                        // Set our message topic, properties, and content
+                        messageFields = pipelineUtils.setMessageFields(msgType)
 
-                            // Send message org.centos.prod.ci.pipeline.image.test.smoke.running on fedmsg
-                            pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
+                        // Send message on fedmsg
+                        pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
+                    }
+                    parallel ostreeImageBootSanity: {
+                        withEnv(pipelineUtils.setStageEnvVars("ci-pipeline-ostree-image-boot-sanity", true)) {
+                            currentStage = "ci-pipeline-ostree-image-boot-sanity"
+                            stage(currentStage) {
+                                if (fileExists("${env.WORKSPACE}/NeedNewImage.txt") || ("${env.GENERATE_IMAGE}" == "true")) {
+                                    pipelineUtils.setStageEnvVars(currentStage)
 
-                            // Run ostree boot sanity
-                            env.rsync_paths = "images"
-                            env.rsync_from = "${env.RSYNC_USER}@${env.RSYNC_SERVER}::${env.RSYNC_DIR}/${env.RSYNC_BRANCH}/"
-                            env.rsync_to = "/home/output/"
-                            pipelineUtils.executeInContainer(currentStage + "-rsync-before", "rsync", "/tmp/rsync.sh")
+                                    // Set our message topic, properties, and content
+                                    messageFields = pipelineUtils.setMessageFields("image.test.smoke.running")
 
-                            pipelineUtils.executeInContainer(currentStage, "ostree-boot-image", "/home/ostree-boot-image.sh")
+                                    // Send message org.centos.prod.ci.pipeline.image.test.smoke.running on fedmsg
+                                    pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
 
-                            env.rsync_to = "${env.RSYNC_USER}@${env.RSYNC_SERVER}::${env.RSYNC_DIR}/${env.RSYNC_BRANCH}/"
-                            env.rsync_from = "/home/output/"
-                            pipelineUtils.executeInContainer(currentStage + "-rsync-after", "rsync", "/tmp/rsync.sh")
+                                    // Run ostree boot sanity
+                                    env.rsync_paths = "images"
+                                    env.rsync_from = "${env.RSYNC_USER}@${env.RSYNC_SERVER}::${env.RSYNC_DIR}/${env.RSYNC_BRANCH}/"
+                                    env.rsync_to = "/home/output/"
+                                    pipelineUtils.executeInContainer(currentStage + "-rsync-before", "rsync", "/tmp/rsync.sh")
 
-                            // Set our message topic, properties, and content
-                            messageFields = pipelineUtils.setMessageFields("image.test.smoke.complete")
+                                    pipelineUtils.executeInContainer(currentStage, "ostree-boot-image", "/home/ostree-boot-image.sh")
 
-                            // Send message org.centos.prod.ci.pipeline.image.test.smoke.complete on fedmsg
-                            pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
+                                    env.rsync_to = "${env.RSYNC_USER}@${env.RSYNC_SERVER}::${env.RSYNC_DIR}/${env.RSYNC_BRANCH}/"
+                                    env.rsync_from = "/home/output/"
+                                    pipelineUtils.executeInContainer(currentStage + "-rsync-after", "rsync", "/tmp/rsync.sh")
 
-                        } else {
-                            echo "Not Running Image Boot Sanity on Image"
+                                    // Set our message topic, properties, and content
+                                    messageFields = pipelineUtils.setMessageFields("image.test.smoke.complete")
+
+                                    // Send message org.centos.prod.ci.pipeline.image.test.smoke.complete on fedmsg
+                                    pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
+
+                                } else {
+                                    echo "Not Running Image Boot Sanity on Image"
+                                }
+
+                            }
                         }
+                    }, ostreeBootSanity: {
+                        withEnv(pipelineUtils.setStageEnvVars("ci-pipeline-ostree-boot-sanity", true)) {
+                            currentStage = "ci-pipeline-ostree-boot-sanity"
+                            stage(currentStage) {
+                                pipelineUtils.setStageEnvVars(currentStage)
 
+                                // Run ostree boot sanity
+                                env.rsync_paths = "images"
+                                env.rsync_from = "${env.RSYNC_USER}@${env.RSYNC_SERVER}::${env.RSYNC_DIR}/${env.RSYNC_BRANCH}/"
+                                env.rsync_to = "/home/output/"
+                                pipelineUtils.executeInContainer(currentStage + "-rsync-before", "rsync", "/tmp/rsync.sh")
+
+                                pipelineUtils.executeInContainer(currentStage, "ostree-boot-image", "/home/ostree-boot-image.sh")
+
+                            }
+                        }
+                    }, functionalTests: {
+                        withEnv(pipelineUtils.setStageEnvVars("ci-pipeline-functional-tests", true)) {
+                            currentStage = "ci-pipeline-functional-tests"
+                            stage(currentStage) {
+                                // Set stage specific vars
+                                pipelineUtils.setStageEnvVars(currentStage)
+
+                                //Set our message topic, properties, and content
+                                messageFields = pipelineUtils.setMessageFields("package.test.functional.running")
+
+                                // Send message org.centos.prod.ci.pipeline.package.test.functional.running on fedmsg
+                                pipelineUtils.sendMessage(messageFields['properties'], messageFields['content'])
+
+                                // Run functional tests
+                                pipelineUtils.executeInContainer(currentStage, "singlehost-test", "/tmp/package-test.sh")
+
+                                // Set our message topic, properties, and content
+                                messageFields = pipelineUtils.setMessageFields("package.test.functional.complete")
+
+                                // Send message org.centos.prod.ci.pipeline.package.test.functional.complete on fedmsg
+                                pipelineUtils.sendMessage(messageFields['properties'], messageFields['content'])
+
+                            }
+                        }
+                    }, atomicHostTests: {
+                        withEnv(pipelineUtils.setStageEnvVars("ci-pipeline-atomic-host-tests", true)) {
+                            currentStage = "ci-pipeline-atomic-host-tests"
+                            stage(currentStage) {
+                                // Set stage specific vars
+                                pipelineUtils.setStageEnvVars(currentStage)
+
+                                // Set our message topic, properties, and content
+                                messageFields = pipelineUtils.setMessageFields("compose.test.integration.running")
+
+                                // Send message org.centos.prod.ci.pipeline.compose.test.integration.running on fedmsg
+                                pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
+
+                                // Run integration tests
+                                pipelineUtils.executeInContainer(currentStage, "singlehost-test", "/tmp/integration-test.sh")
+
+                                // Set our message topic, properties, and content
+                                messageFields = pipelineUtils.setMessageFields("compose.test.integration.complete")
+
+                                // Send message org.centos.prod.ci.pipeline.compose.test.integration.complete on fedmsg
+                                pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
+
+                            }
+                        }
                     }
-
-                    currentStage = "ci-pipeline-ostree-boot-sanity"
-                    stage(currentStage) {
-                        pipelineUtils.setStageEnvVars(currentStage)
-
-                        // Run ostree boot sanity
-                        env.rsync_paths = "images"
-                        env.rsync_from = "${env.RSYNC_USER}@${env.RSYNC_SERVER}::${env.RSYNC_DIR}/${env.RSYNC_BRANCH}/"
-                        env.rsync_to = "/home/output/"
-                        pipelineUtils.executeInContainer(currentStage + "-rsync-before", "rsync", "/tmp/rsync.sh")
-
-                        pipelineUtils.executeInContainer(currentStage, "ostree-boot-image", "/home/ostree-boot-image.sh")
-
-                        // Set our message topic, properties, and content
-                        messageFields = pipelineUtils.setMessageFields("package.test.functional.queued")
-
-                        // Send message org.centos.prod.ci.pipeline.package.test.functional.queued on fedmsg
-                        pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
-                    }
-
-                    currentStage = "ci-pipeline-functional-tests"
-                    stage(currentStage) {
-                        // Set stage specific vars
-                        pipelineUtils.setStageEnvVars(currentStage)
-
-                        //Set our message topic, properties, and content
-                        messageFields = pipelineUtils.setMessageFields("package.test.functional.running")
-
-                        // Send message org.centos.prod.ci.pipeline.package.test.functional.running on fedmsg
-                        pipelineUtils.sendMessage(messageFields['properties'], messageFields['content'])
-
-                        // Run functional tests
-                        pipelineUtils.executeInContainer(currentStage, "singlehost-test", "/tmp/package-test.sh")
-
-                        // Set our message topic, properties, and content
-                        messageFields = pipelineUtils.setMessageFields("package.test.functional.complete")
-
-                        // Send message org.centos.prod.ci.pipeline.package.test.functional.complete on fedmsg
-                        pipelineUtils.sendMessage(messageFields['properties'], messageFields['content'])
-
-                        // Set our message topic, properties, and content
-                        messageFields = pipelineUtils.setMessageFields("compose.test.integration.queued")
-
-                        // Send message org.centos.prod.ci.pipeline.compose.test.integration.queued on fedmsg
-                        pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
-                    }
-
-                    currentStage = "ci-pipeline-atomic-host-tests"
-                    stage(currentStage) {
-                        // Set stage specific vars
-                        pipelineUtils.setStageEnvVars(currentStage)
-
-                        // Set our message topic, properties, and content
-                        messageFields = pipelineUtils.setMessageFields("compose.test.integration.running")
-
-                        // Send message org.centos.prod.ci.pipeline.compose.test.integration.running on fedmsg
-                        pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
-
-                        // Run integration tests
-                        pipelineUtils.executeInContainer(currentStage, "singlehost-test", "/tmp/integration-test.sh")
-
-                        // Set our message topic, properties, and content
-                        messageFields = pipelineUtils.setMessageFields("compose.test.integration.complete")
-
-                        // Send message org.centos.prod.ci.pipeline.compose.test.integration.complete on fedmsg
-                        pipelineUtils.sendMessageWithAudit(messageFields['properties'], messageFields['content'], msgAuditFile, fedmsgRetryCount)
-
-                    }
-
                 } catch (e) {
                     // Set build result
                     currentBuild.result = 'FAILURE'
