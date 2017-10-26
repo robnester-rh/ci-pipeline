@@ -35,6 +35,7 @@ RUN for i in {1..5} ; do dnf -y install ansible \
         && dnf clean all \
         && break || sleep 10 ; done
 
+
 # Change some mock settings
 RUN echo "config_opts['package_manager'] = 'dnf'" > /etc/mock/site-defaults.cfg
 RUN echo "config_opts['plugin_conf']['lvm_root_opts']['size'] = '16G'" >> /etc/mock/site-defaults.cfg
